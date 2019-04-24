@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <inttypes.h>
+#include <ctype.h>
 
 //Limpa o console
 #define CLEAR() system("clear || cls")
@@ -33,7 +34,7 @@ void dump_mem(uint32_t add, uint32_t wsize) {
 		uint32_t tmp = mem[add / 4];
 
 		//Enquanto estiver no range de busca, printa na tela o valor
-		if (i <= wsize) {
+		if (i < wsize) {
 			printf("mem[%d] = 0x%08x \n", (i + a), tmp);
 		}
 
@@ -55,14 +56,16 @@ void clean_mem() {
 //Le um inteiro alinhado. Enderecos multiplos de 4
 int32_t lw(uint32_t add, int16_t kte) {
 	
+	int32_t tmp = mem[(add + kte) / 4];
+
 	//Verifica se o endereco nao eh multiplo de 4
 	if (add % 4 != 0) {
 		printf("Endereco invalido. (Erro: lw)");
-		return;
+		tmp = 0;
 	}
 
 	//Retorna a palavra 
-	return mem[(add + kte) / 4];
+	return tmp;
 }
 
 //Le meia palavra (16 bits). Retorna inteiro com sinal
@@ -86,18 +89,18 @@ int32_t lh(uint32_t add, int16_t kte) {
 //Le meia palavra (16 bits). Retorna inteiro sem sinal
 uint32_t lhu(uint32_t add, int16_t kte) {
 
-	//Avanca na memoria para o endereco
-	uint32_t tmp = mem[(add + kte) / 4];
+	uint32_t tmp, ret;
 	
-	//Retorno da funcao
-	uint32_t ret = 0; 
+	//Coloca em tmp o valor da memoria do endereco 
+	tmp = mem[(add + kte) / 4];
+	ret = 0; 
 
 	// Checa se os Dados estao alinhados
-	if (kte % 2 != 0) {
+	if (add % 4 != 0) {
 		printf("\n\nDados nao alinhados. (Erro: lhu)");
 	}
 
-	if (add % 4 == 0) { //!
+	if (kte == 2) { //!
 		ret = (tmp >> 16) & 0xFFFF;
 	}
 	else {
@@ -117,7 +120,7 @@ int32_t lb(uint32_t add, int16_t kte) {
 	//Acessa o bit
 	tmp &= 0xFF;
 
-	return ((tmp & 0x80) ? (tmp | 0xFFFFFF00) : tmp);
+	return ((tmp & 0x80 == 0) ? (tmp | 0xFFFFFF00) : tmp);
 }
 
 //Le um byte (8 bits) e retorna um inteiro sem sinal
@@ -207,6 +210,8 @@ void clean_buffer() {
 //Funcao para pausar o programa e esperar o enter para continuar
 void enter() {
 	printf("\n\nPressione Enter para continuar...");
+
+	//Se utilizado sozinho só para o programa até qualuqer input ser colocado
 	clean_buffer();
 }
 
@@ -223,34 +228,35 @@ void menuInicial() {
 //Printa tela da opcao 'dump_mem()'
 void dump_memMenu() {
 	printf("Dump de memoria. \n\n");
-	printf("Entre com o endereco inicial (4096 max): ");
+	printf("Entre com o endereco inicial (1024 max): ");
 
 	scanf("%" SCNd32, &dump_add);
 	clean_buffer();
 
 	//Testa se o endereco esta dentro do permitido
-	while (dump_add < 0 || dump_add > 4096 ) {
+	while (dump_add < 0 || dump_add > 1024 ) {
 		CLEAR();
-		printf("Entre com um endereco inicial valido (4096 max): ");
+		printf("Entre com um endereco inicial valido (1024 max): ");
 
 		scanf("%" SCNd32, &dump_add);
 		clean_buffer();
 	}
 
-	printf("Entre com o a quantidade de palavras que deseja retornar (4096 max): ");
+	printf("Entre com o a quantidade de palavras que deseja retornar (1024 max): ");
 
 	scanf("%" SCNd32, &dump_size);
 	clean_buffer();
 
 	//Testa se o tamanho esta dentro do permitido
-	while (dump_size < 0 || dump_size > (4096 - (int)dump_add) ) {
+	while (dump_size < 0 || dump_size > (1024 - dump_add) ) {
 		CLEAR();
-		printf("Entre com a quantidade de palavras validas (4096 max): ");
+		printf("Entre com a quantidade de palavras validas (1024 max): ");
 
 		scanf("%" SCNd32, &dump_size);
 		clean_buffer();
 	}
 
+	printf("\n");
 }
 
 //Inicializa a memoria com valores previamente estabelecidos
@@ -283,9 +289,31 @@ void initMem() {
 	// F
 	sw(20, 0, 0xFFFFFFFF);
 
-	//G
+	// G
 	sw(24, 0, 0x80000000);
 
+	//Testes criados alem dos fornecidos
+	// 1
+	sb(28, 0, 0xBA);
+	sb(28, 1, 0xBA);
+	sb(28, 2, 0xEF);
+	sb(28, 3, 0xDD);
+
+	// 2
+	sb(32, 0, 0x11);
+	sb(32, 1, 0x22);
+	sb(32, 2, 0xFF);
+	sb(32, 3, 0xEE);
+
+	// 3
+	sh(36, 0, 0xABBA);
+	sh(36, 2, 0xEF);
+
+	// 4
+	sw(40, 0, 0xFAFBFCFD);
+
+	// 5
+	sw(44, 0, 0x88CA);
 }
 
 //Le a memoria
@@ -342,6 +370,43 @@ void read_mem() {
 	printf("Hex: 0x%02x  Dec: %d \n\n", a, a);
 	a = lw(20, 0); 
 	printf("Hex: 0x%02x  Dec: %d \n\n", a, a);
+
+	//Testes realizados alem dos fornecidos
+	// 1
+	a = lb(28, 0);
+	printf("Hex: 0x%02x  Dec: %d \n", a, a);
+	a = lb(28, 1);
+	printf("Hex: 0x%02x  Dec: %d \n", a, a);
+	a = lb(28, 2);
+	printf("Hex: 0x%02x  Dec: %d \n", a, a);
+	a = lb(28, 3);
+	printf("Hex: 0x%02x  Dec: %d \n\n", a, a);
+
+	// 2
+	a = lb(32, 0);
+	printf("Hex: 0x%02x  Dec: %d \n", a, a);
+	a = lb(32, 1);
+	printf("Hex: 0x%02x  Dec: %d \n", a, a);
+	a = lb(32, 2);
+	printf("Hex: 0x%02x  Dec: %d \n", a, a);
+	a = lb(32, 3);
+	printf("Hex: 0x%02x  Dec: %d \n\n", a, a);
+
+	// 3
+	a = lbu(36, 0);
+	printf("Dec: %d \n", a);
+	a = lbu(36, 1);
+	printf("Dec: %d \n", a);
+	a = lbu(36, 2);
+	printf("Dec: %d \n", a);
+	a = lbu(36, 3);
+	printf("Dec: %d \n\n", a);
+
+	// 4
+	a = lw(40, 0);
+	printf("Hex: 0x%02x  Dec: %d \n\n", a, a);
+
+	// 5
 
 }
 
