@@ -132,8 +132,6 @@ int32_t lbu(uint32_t add, int16_t kte) {
 	tmp &= 0xFF;
 
 	return tmp;
-
-	//return (tmp >> (8 * (add % 4))) && 0xFF;
 }
 
 //Escreve um inteiro alinhado na memoria. Enderecos multiplos de 4
@@ -405,9 +403,6 @@ void read_mem() {
 	// 4
 	a = lw(40, 0);
 	printf("Hex: 0x%02x  Dec: %d \n\n", a, a);
-
-	// 5
-
 }
 
 //Loop principal do prorama
