@@ -15,13 +15,16 @@
 #include <inttypes.h>
 #include <ctype.h>
 
+//Macros Auxiliares
+#define SIGNED(imm) (((imm) & 0x8000) ? ((imm) | 0xFFFF0000) : (imm))
+#define MSB(num) ((num) >> 31)
+
 //Limpa o console
 #define CLEAR() system("clear || cls")
 
 //Define o tamanho da memoria
 #define MEM_SIZE 4096
 int32_t mem[MEM_SIZE];
-
 int32_t regs[32];
 
 /*********************************************************************************************************************/
@@ -56,14 +59,16 @@ enum FUNCT7 {
 
 /*********************************************************************************************************************/
 
-int32_t dump_add, dump_size;
+uint32_t dump_add, dump_size;
 
 uint32_t ri, pc;
+int32_t k26, k16, funct,
+		 opcode, rs, rt, rd, shamt;
 
 int is_running = 1;
 int op;
 
-/*										Funcoes Principais										*/
+/*********************Funcoes Principais*************************/
 
 //Imprime o conteudo da memoria, em formato hexadecimal
 void dump_mem(uint32_t add, uint32_t wsize) {
@@ -100,11 +105,52 @@ void fetch() {
 }
 
 void decode() {
-
+	opcode = (ri >> 26) & 0x3F;
+	rs = (ri >> 21) & 0x1F;
+	rt = (ri >> 16) & 0x1F;
+	rd = (ri >> 11) & 0x1F;
+	shamt = (ri >> 6) & 0x1F;
+	k26 = ri & 0x3FFFFFF;
+	k16 = ri & 0xFFFF;
+	funct = ri & 0x3F;
+	
 }
 
 void execute() {
+	long long oa, ob, res;
+	int var_offset = 0, n, aux;
 
+	switch (opcode)	{
+		case LUI: case AUIPC:
+			regs[rt] = 0xFFFF0000 & (k16 << 16);
+			break;
+		case ILType:
+			break;
+		case BType:
+
+			switch (funct) {
+			default:
+				break;
+			}
+
+			break;
+		case JAL: case JALR:
+			regs[rd] = pc;
+			pc = regs[rs];
+			break;
+		case StoreType:
+			break;
+		case ILAType:
+			break;
+		case RegType:
+			break;
+		case ECALL:
+			break;
+		default:
+			printf("Erro ao acessar o opcode.");
+			enter();
+			break;
+	}
 };
 
 //Chama oa funcoes de execucao do programa
@@ -114,7 +160,7 @@ void step() {
 	execute();
 };
 
-/*											Intrucoes											*/
+/**********************Intrucoes************************/
 
 //Le um inteiro alinhado. Enderecos multiplos de 4
 int32_t lw(uint32_t add, int16_t kte) {
@@ -261,7 +307,7 @@ void sb(uint32_t add, int16_t kte, int8_t dado) {
 	mem[add >> 2] = tmp;
 }
 
-/*                              Funcoes auxiliares                              */
+/*************************Funcoes auxiliares*************************************/
 
 //Limpa o buffer de input 
 void clean_buffer() {
@@ -320,11 +366,12 @@ void dump_memMenu() {
 	printf("\n");
 }
 
-void initMem(char *textbin, char *databin) {
+void initMem(/*char *textbin, char *databin */) {
 
 	FILE* text, * data;
 	char byte;
-	int num = 0, i, word, auxb;
+	uint32_t num, word, auxb;
+	int i;
 
 	for (i = 0; i < 32; i++) {
 		regs[i] = 0;
@@ -336,23 +383,23 @@ void initMem(char *textbin, char *databin) {
 	regs[29] = 0x3FFC;
 
 	//Abre o arquivo textbin
-	text = fopen(textbin, "rb+");
+	text = fopen("text.bin", "rb+");
 	if (!text) {
-		printf("Arquivo %s nao econtrado. (Text Bin)", textbin);
+		printf("Arquivo text nao econtrado. (Text Bin)");
 		enter();
 		return;
 	}
 
 	//Abre o arquivo de databin
-	data = fopen(databin, "rb+");
+	data = fopen("data.bin", "rb+");
 	if (!data) {
-		printf("Arquivo %s nao encontrado. (Data Bin)", databin);
+		printf("Arquivo data nao encontrado. (Data Bin)");
 		enter();
 		return;
 	}
 
 	//Percorre o arquivo Text
-	while (!feof(text) && num < (0x2000 >> 2)) {
+	while (!feof(text) && num < (0x54)) {
 		word = 0;
 		for (i = 0; i < 4; i++)	{
 			if (1 == fread(&byte, sizeof(char), 1, text)) {
@@ -366,10 +413,10 @@ void initMem(char *textbin, char *databin) {
 	}
 	fclose(text);
 
-	num = (0x2000 >> 2);
+	num = 0x2000;
 
 	//Percorre o arquivo data
-	while (!feof(data) && num < (0x8000 >> 2)) {
+	while (!feof(data) && num < 0x2FFC) {
 		word = 0;
 		for (i = 0; i < 4; i++)	{
 			if (1 == fread(&byte, sizeof(char), 1, data)) {
@@ -455,7 +502,7 @@ void run() {
 	}
 }
 
-/**********************************************/
+/******************************************************************/
 
 // Funcao principal do programa
 int main() {
@@ -465,6 +512,9 @@ int main() {
 
 	//Inicializa o PC em zero
 	pc = 0;
+
+	//Inicializa o RI em zero
+	ri = 0;
 
 	//Chama a funcao principal do programa
 	run();

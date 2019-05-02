@@ -6,8 +6,6 @@
 *.user
 *.userosscache
 *.sln.docstates
-*.sln
-*.vcxproj*
 *.opendb
 
 # User-specific files (MonoDevelop/Xamarin Studio)
@@ -213,3 +211,6 @@ FakesAssemblies/
 GeneratedArtifacts/
 _Pvt_Extensions/
 ModelManifest.xml
+*.sln
+*.vcxproj
+*.filters
