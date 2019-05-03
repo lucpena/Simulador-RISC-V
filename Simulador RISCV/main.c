@@ -14,6 +14,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include <ctype.h>
+#include <windows.h>
 
 //Macros Auxiliares
 #define SIGNED(imm) (((imm) & 0x8000) ? ((imm) | 0xFFFF0000) : (imm))
@@ -24,32 +25,30 @@
 
 //Define o tamanho da memoria
 #define MEM_SIZE 4096
-int32_t mem[MEM_SIZE];
-int32_t regs[32];
+uint32_t mem[MEM_SIZE];
+uint32_t regs[32];
 
-/*********************************************************************************************************************/
-
-// lembrem que so sao considerados os 7 primeiros bits dessas constantes
+// Lembrem que so sao considerados os 7 primeiros bits dessas constantes
 enum OPCODES { 
-	LUI = 0x37, AUIPC = 0x17, // atribui 20 bits mais significativos
+	LUI = 0x37, AUIPC = 0x17, // Atribui 20 bits mais significativos
 	ILType = 0x03, // Load type
-	BType = 0x63, // branch condicional
-	JAL = 0x6F, JALR = 0x67, // jumps - JAL formato UJ, JALR formato I
-	StoreType = 0x23, // store
-	ILAType = 0x13, // logico-aritmeticas com imediato
-	RegType = 0x33, // operacoes LA com registradores
-	ECALL = 0x73 // chamada do sistema - formato I
+	BType = 0x63, // Branch condicional
+	JAL = 0x6F, JALR = 0x67, // Jumps - JAL formato UJ, JALR Formato I
+	StoreType = 0x23, // Store
+	ILAType = 0x13, // Logico-aritmeticas com imediato
+	RegType = 0x33, // Operacoes LA com registradores
+	ECALL = 0x73 // Chamada do sistema - Formato I
 };
 
 // campo auxiliar de 3 bits
 enum FUNCT3 {
-	BEQ3 = 0, BNE3 = 01, BLT3 = 04, BGE3 = 05, BLTU3 = 0x06, BGEU3 = 07, // branches
-	LB3 = 0, LH3 = 01, LW3 = 02, LBU3 = 04, LHU3 = 05, // loads
-	SB3 = 0, SH3 = 01, SW3 = 02, // stores
+	BEQ3 = 0, BNE3 = 01, BLT3 = 04, BGE3 = 05, BLTU3 = 0x06, BGEU3 = 07, // Branch
+	LB3 = 0, LH3 = 01, LW3 = 02, LBU3 = 04, LHU3 = 05, // Load
+	SB3 = 0, SH3 = 01, SW3 = 02, // Store
 	ADDSUB3 = 0, SLL3 = 01, SLT3 = 02, SLTU3 = 03, // LA com
-	XOR3 = 04, SR3 = 05, OR3 = 06, AND3 = 07, // registradores
+	XOR3 = 04, SR3 = 05, OR3 = 06, AND3 = 07,	   // registradore
 	ADDI3 = 0, ORI3 = 06, SLTI3 = 02, XORI3 = 04, ANDI3 = 07, // LA com
-	SLTIU3 = 03, SLLI3 = 01, SRI3 = 05 // imediatos
+	SLTIU3 = 03, SLLI3 = 01, SRI3 = 05						  // imediato
 };
 
 // campo auxiliar de 7 bits para as instrucoes SRLI/SRAI, ADD/SUB, SRL/SRA
@@ -57,13 +56,11 @@ enum FUNCT7 {
 	ADD7 = 0, SUB7 = 0x20, SRA7 = 0x20, SRL7 = 0, SRLI7 = 0x00, SRAI7 = 0x20
 };
 
-/*********************************************************************************************************************/
-
 uint32_t dump_add, dump_size;
 
-uint32_t ri, pc;
+uint32_t ri, pc, k16, k26;
 int32_t opcode, rs1, rs2, rd, shamt, funct3, funct7, imm12_i, 
-		imm12_s, imm13, imm20_u, imm21, k16, k26;
+		imm12_s, imm13, imm20_u, imm21;
 
 int is_running = 1;
 int op;
@@ -84,7 +81,6 @@ void dump_mem(uint32_t add, uint32_t wsize) {
 		if (i < wsize) {
 			printf("mem[%d] = 0x%08x \n", (i + a), tmp);
 		}
-
 		//Vai para o proximo endereco de memoria
 		add += 4;
 	}
@@ -93,7 +89,7 @@ void dump_mem(uint32_t add, uint32_t wsize) {
 //Garante que a memoria esteja vazia para realizar a inicializacao.
 //Utilizado em uma segunda chamada da funcao de inicializacao.
 void clean_mem() {
-	for (int i = 0; i < MEM_SIZE; i++) {
+	for (int i = 0; i < MEM_SIZE; i++) { 
 		mem[i] = 0;
 	}
 }
@@ -260,12 +256,36 @@ void sb(uint32_t add, int16_t kte, int8_t dado) {
 
 /**************************************************************************/
 
+//Executa o ECALL
+void ecall() {
+	switch (regs[2]) {
+	case 1:
+		//Mostra um inteiro na tela,mv c
+		printf("%d", regs[4]);
+		break;
+	case 4:
+		//Mostra uma string na tela
+		printf("%c", (char)regs[4]);
+		break;
+	case 10:
+		//Encerra o programa
+		printf("/n/n Programa encerrado atraves do ECALL.");
+		enter();
+		is_running = 0;
+		break;
+	default:
+		printf("Codigo de ECALL invalido.");
+		break;
+	}
+}
 
+// Funcao que execura uma instrucao
 void fetch() {
 	ri = mem[pc >> 2];
 	pc += 4;
 }
 
+//Extrai os campos de uma funcao
 void decode() {
 	//20 bits
 	imm20_u = (ri >> 12) & 0xFFFFF;
@@ -297,14 +317,17 @@ void decode() {
 
 }
 
+//Executa uma funcao lida pela funcao fetch() e decodificada por decode()
 void execute() {
 	//long long oa, ob, res;
-	int var_offset = 0, n, aux;
+	int var_offset = 0; // , n, aux;
 
 	switch (opcode) {
-	case LUI: case AUIPC:
+	case LUI: 
+	case AUIPC:
 		regs[rs1] = 0xFFFF0000 & (k16 << 16);
 		break;
+
 	case ILType:
 
 		switch (funct3) {
@@ -328,47 +351,30 @@ void execute() {
 		}
 
 		break;
+
 	case BType:
 
 		switch (funct3) {
 		case BEQ3:
-			if (regs[rs2] == regs[rs1])
-			{
-				pc += (SIGNED(k16) << 2);
-			}
+			if (regs[rs2] == regs[rs1]) { pc += (SIGNED(k16) << 2);	}
 			break;
 		case BNE3:
-			if (regs[rs2] != regs[rs1])
-			{
-				pc += (SIGNED(k16) << 2);
-			}
+			if (regs[rs2] != regs[rs1])	{ pc += (SIGNED(k16) << 2);	}
 			break;
 		case BLT3:
-			if (regs[rs2] < 0)
-			{
-				pc += (SIGNED(k16) << 2);
-			}
+			if (regs[rs2] < 0) { pc += (SIGNED(k16) << 2); }
 			break;
 		case BLTU3:
-			if ((uint32_t)regs[rs2] < 0)
-			{
-				pc += (SIGNED(k16) << 2);
-			}
+			if ((uint32_t)regs[rs2] < 0) { pc += (SIGNED(k16) << 2); }
 			break;
 		case BGE3:
-			if (regs[rs2] >= 0)
-			{
-				pc += (SIGNED(k16) << 2);
-			}
+			if (regs[rs2] >= 0)	{ pc += (SIGNED(k16) << 2);	}
 			break;
 		case BGEU3:
-			if ((uint32_t)regs[rs2] >= 0)
-			{
-				pc += (SIGNED(k16) << 2);
-			}
+			if ((uint32_t)regs[rs2] >= 0) {	pc += (SIGNED(k16) << 2); }
 			break;
 		default:
-			printf("Ocorreu um erro ao operar um Brach.");
+			printf("Ocorreu um erro ao operar um Branch.");
 			enter();
 			break;
 		}
@@ -383,7 +389,7 @@ void execute() {
 		break;
 
 	case StoreType:
-		// SB3=0, SH3=01, SW3=02, // stores
+
 		switch (funct3)
 		{
 		case SB3:
@@ -402,11 +408,11 @@ void execute() {
 		}
 
 		break;
+
 	case ILAType:
 
 		switch (funct3)
 		{
-
 		case ADDI3:
 			regs[rs1] = regs[rs2] + SIGNED(k16);
 			break;
@@ -438,6 +444,7 @@ void execute() {
 	case RegType:
 		break;
 	case ECALL:
+		ecall();
 		break;
 	default:
 		printf("Erro ao acessar o opcode.");
@@ -470,7 +477,7 @@ void dump_memMenu() {
 	printf("Dump de memoria. \n\n");
 	printf("Entre com o endereco inicial (1024 max): ");
 
-	scanf("%" SCNd32, &dump_add);
+	uint32_t warn = scanf("%" SCNd32, &dump_add);
 	clean_buffer();
 
 	//Testa se o endereco esta dentro do permitido
@@ -478,13 +485,13 @@ void dump_memMenu() {
 		CLEAR();
 		printf("Entre com um endereco inicial valido (1024 max): ");
 
-		scanf("%" SCNd32, &dump_add);
+		uint32_t warn2 = scanf("%" SCNd32, &dump_add);
 		clean_buffer();
 	}
 
 	printf("Entre com o a quantidade de palavras que deseja retornar (1024 max): ");
 
-	scanf("%" SCNd32, &dump_size);
+	uint32_t warn3 = scanf("%" SCNd32, &dump_size);
 	clean_buffer();
 
 	//Testa se o tamanho esta dentro do permitido
@@ -492,14 +499,14 @@ void dump_memMenu() {
 		CLEAR();
 		printf("Entre com a quantidade de palavras validas (1024 max): ");
 
-		scanf("%" SCNd32, &dump_size);
+		uint32_t warn4 = scanf("%" SCNd32, &dump_size);
 		clean_buffer();
 	}
 
 	printf("\n");
 }
 
-void initMem(/*char *textbin, char *databin */) {
+void initMem() {
 
 	FILE* text, * data;
 	char byte;
@@ -570,14 +577,14 @@ void run() {
 	menuInicial();
 
 	while (is_running) {
-		scanf("%d", &op);
+		int op1 = scanf("%d", &op);
 		clean_buffer();
 
 		// Seleciona a opcao escolhida
 		switch (op) {
 		case 1:
 			//Inicializa a memoria
-			//initMem();
+			initMem();
 
 			//Limpa a tela
 			CLEAR();
