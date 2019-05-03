@@ -62,8 +62,8 @@ enum FUNCT7 {
 uint32_t dump_add, dump_size;
 
 uint32_t ri, pc;
-int32_t k26, k16, funct,
-		 opcode, rs, rt, rd, shamt;
+int32_t opcode, rs1, rs2, rd, shamt, funct3, funct7, imm12_i, 
+		imm12_s, imm13, imm20_u, imm21, k16, k26;
 
 int is_running = 1;
 int op;
@@ -98,67 +98,18 @@ void clean_mem() {
 	}
 }
 
-
-void fetch() {
-	ri = mem[pc >> 2];
-	pc += 4;
+//Limpa o buffer de input 
+void clean_buffer() {
+	while (getchar() != '\n');
 }
 
-void decode() {
-	opcode = (ri >> 26) & 0x3F;
-	rs = (ri >> 21) & 0x1F;
-	rt = (ri >> 16) & 0x1F;
-	rd = (ri >> 11) & 0x1F;
-	shamt = (ri >> 6) & 0x1F;
-	k26 = ri & 0x3FFFFFF;
-	k16 = ri & 0xFFFF;
-	funct = ri & 0x3F;
-	
+//Funcao para pausar o programa e esperar o enter para continuar
+void enter() {
+	printf("\n\nPressione Enter para continuar...");
+
+	//Se utilizado sozinho só para o programa até qualuqer input ser colocado
+	clean_buffer();
 }
-
-void execute() {
-	long long oa, ob, res;
-	int var_offset = 0, n, aux;
-
-	switch (opcode)	{
-		case LUI: case AUIPC:
-			regs[rt] = 0xFFFF0000 & (k16 << 16);
-			break;
-		case ILType:
-			break;
-		case BType:
-
-			switch (funct) {
-			default:
-				break;
-			}
-
-			break;
-		case JAL: case JALR:
-			regs[rd] = pc;
-			pc = regs[rs];
-			break;
-		case StoreType:
-			break;
-		case ILAType:
-			break;
-		case RegType:
-			break;
-		case ECALL:
-			break;
-		default:
-			printf("Erro ao acessar o opcode.");
-			enter();
-			break;
-	}
-};
-
-//Chama oa funcoes de execucao do programa
-void step() {
-	fetch();
-	decode();
-	execute();
-};
 
 /**********************Intrucoes************************/
 
@@ -307,20 +258,202 @@ void sb(uint32_t add, int16_t kte, int8_t dado) {
 	mem[add >> 2] = tmp;
 }
 
+/**************************************************************************/
+
+
+void fetch() {
+	ri = mem[pc >> 2];
+	pc += 4;
+}
+
+void decode() {
+	//20 bits
+	imm20_u = (ri >> 12) & 0xFFFFF;
+
+	//12 bits 0x1000
+	imm12_i = (ri >> 20) & 0xFFF;
+
+	//7 bits 0x80
+	opcode = ri & 0x7F;
+	imm12_s = (ri >> 26) & 0x7F;
+
+	//5 bits 0x20
+	funct7 = (ri >> 25) & 0x1F;
+	rd = (ri >> 7) & 0x1F;
+	rs1 = (ri >> 15) & 0x1F; //rt
+	rs2 = (ri >> 20) & 0x1f; //rs
+
+	//3 bits 0x08
+	funct3 = (ri >> 12) & 0x07;
+
+
+	imm13 = 0;
+	imm21 = 0;
+	shamt = (ri >> 6) & 0x1F;
+
+	k26 = ri & 0x3FFFFFF;
+	k16 = ri & 0xFFFF;
+	rd = (ri >> 11) & 0x1F;
+
+}
+
+void execute() {
+	//long long oa, ob, res;
+	int var_offset = 0, n, aux;
+
+	switch (opcode) {
+	case LUI: case AUIPC:
+		regs[rs1] = 0xFFFF0000 & (k16 << 16);
+		break;
+	case ILType:
+
+		switch (funct3) {
+		case LB3:
+			regs[rs1] = lb(pc, (unsigned int)regs[rs2] + SIGNED(k16));
+			break;
+		case LH3:
+			regs[rs1] = lh(pc, (unsigned int)regs[rs2] + SIGNED(k16));
+			break;
+		case LW3:
+			regs[rs1] = lw(pc, (unsigned int)regs[rs2] + SIGNED(k16));
+			break;
+		case LBU3:
+			regs[rs1] = lbu(pc, (unsigned int)regs[rs2] + SIGNED(k16));
+			break;
+		case LHU3:
+			regs[rs1] = lhu(pc, (unsigned int)regs[rs2] + SIGNED(k16));
+			break;
+		default:
+			break;
+		}
+
+		break;
+	case BType:
+
+		switch (funct3) {
+		case BEQ3:
+			if (regs[rs2] == regs[rs1])
+			{
+				pc += (SIGNED(k16) << 2);
+			}
+			break;
+		case BNE3:
+			if (regs[rs2] != regs[rs1])
+			{
+				pc += (SIGNED(k16) << 2);
+			}
+			break;
+		case BLT3:
+			if (regs[rs2] < 0)
+			{
+				pc += (SIGNED(k16) << 2);
+			}
+			break;
+		case BLTU3:
+			if ((uint32_t)regs[rs2] < 0)
+			{
+				pc += (SIGNED(k16) << 2);
+			}
+			break;
+		case BGE3:
+			if (regs[rs2] >= 0)
+			{
+				pc += (SIGNED(k16) << 2);
+			}
+			break;
+		case BGEU3:
+			if ((uint32_t)regs[rs2] >= 0)
+			{
+				pc += (SIGNED(k16) << 2);
+			}
+			break;
+		default:
+			printf("Ocorreu um erro ao operar um Brach.");
+			enter();
+			break;
+		}
+		break;
+
+	case JAL:
+		pc = regs[rs2];
+		break;
+	case JALR:
+		regs[rd] = pc;
+		pc = regs[rs2];
+		break;
+
+	case StoreType:
+		// SB3=0, SH3=01, SW3=02, // stores
+		switch (funct3)
+		{
+		case SB3:
+			sb((unsigned int)regs[rs2] + SIGNED(k16), imm12_s, (char)(regs[rs1] & 0xFF));
+			break;
+		case SH3:
+			sh((unsigned int)regs[rs2] + SIGNED(k16), imm12_s, regs[rs1] & 0xFFFF);
+			break;
+		case SW3:
+			sw((unsigned int)regs[rs2] + SIGNED(k16), imm12_s, regs[rs1]);
+			break;
+		default:
+			printf("Erro ao executar um Store.");
+			enter();
+			break;
+		}
+
+		break;
+	case ILAType:
+
+		switch (funct3)
+		{
+
+		case ADDI3:
+			regs[rs1] = regs[rs2] + SIGNED(k16);
+			break;
+		case SLLI3:
+			regs[rd] = regs[rs1] << shamt;
+			break;
+		case SLTI3:
+			regs[rs1] = regs[rs2] < SIGNED(k16);
+			break;
+		case SLTIU3:
+			regs[rs1] = regs[rs2] < (k16 & 0xFFFF);
+			break;
+		case XORI3:
+			regs[rs1] = regs[rs2] ^ k16;
+			break;
+		case SRI3:
+
+		case ORI3:
+			regs[rs1] = regs[rs2] | k16;
+			break;
+		case AND3:
+			regs[rd] = regs[rs2] & regs[rs1];
+			break;
+		default:
+			break;
+		}
+
+		break;
+	case RegType:
+		break;
+	case ECALL:
+		break;
+	default:
+		printf("Erro ao acessar o opcode.");
+		enter();
+		break;
+	}
+};
+
+//Chama oa funcoes de execucao do programa
+void step() {
+	fetch();
+	decode();
+	execute();
+};
+
 /*************************Funcoes auxiliares*************************************/
-
-//Limpa o buffer de input 
-void clean_buffer() {
-	while (getchar() != '\n');
-}
-
-//Funcao para pausar o programa e esperar o enter para continuar
-void enter() {
-	printf("\n\nPressione Enter para continuar...");
-
-	//Se utilizado sozinho só para o programa até qualuqer input ser colocado
-	clean_buffer();
-}
 
 //Printa na tela o menu principal para navegacao no programa
 void menuInicial() {
@@ -370,13 +503,14 @@ void initMem(/*char *textbin, char *databin */) {
 
 	FILE* text, * data;
 	char byte;
-	uint32_t num, word, auxb;
+	uint32_t num = 0, word, auxb;
 	int i;
 
 	for (i = 0; i < 32; i++) {
 		regs[i] = 0;
 	}
 
+	//Global Pointer
 	regs[28] = 0x1800;
 
 	//Stack Pointer
