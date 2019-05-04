@@ -65,26 +65,8 @@ int32_t opcode, rs1, rs2, rd, shamt, funct3, funct7, imm12_i,
 int is_running = 1;
 int op;
 
-/*********************Funcoes Principais*************************/
-
-//Imprime o conteudo da memoria, em formato hexadecimal
-void dump_mem(uint32_t add, uint32_t wsize) {
-	//Variavel para corrigir a contagem do index da memoria
-	int a = add / 4;
-
-	for (unsigned int i = 0; i < MEM_SIZE; i++) {
-
-		//Coloca em tmp o valor da memoria
-		uint32_t tmp = mem[add / 4];
-
-		//Enquanto estiver no range de busca, printa na tela o valor
-		if (i < wsize) {
-			printf("mem[%d] = 0x%08x \n", (i + a), tmp);
-		}
-		//Vai para o proximo endereco de memoria
-		add += 4;
-	}
-}
+char format_op, format_op_reg;
+char options[] = "HhDd";
 
 //Garante que a memoria esteja vazia para realizar a inicializacao.
 //Utilizado em uma segunda chamada da funcao de inicializacao.
@@ -206,7 +188,7 @@ void sw(uint32_t add, int16_t kte, int32_t dado) {
 void sh(uint32_t add, int16_t kte, int16_t dado) {
 
 	// Endereco de memoria
-	uint32_t tmp = mem[add >> 4];
+	uint32_t tmp = mem[add >> 2];
 
 	//Offset da meia palavra em relacao ao endereco da palavra
 	int hadd = (add + kte) % 4;
@@ -460,15 +442,13 @@ void step() {
 	execute();
 };
 
-/*************************Funcoes auxiliares*************************************/
-
 //Printa na tela o menu principal para navegacao no programa
 void menuInicial() {
-	printf("Acesso a memoria RISC V \n\n");
+	printf("Simulador RISC V \n\n");
 	printf("Escolha a opcao desejada:\n");
-	printf("1- Inicializar a memoria \n");
+	printf("1- Inicializar a memoria a partir dos arquivos text e data \n");
 	printf("2- Imprimir o conteudo da memoria\n");
-	printf("3- Ler os dados da memoria\n");
+	printf("3- Imprimir o conteudo do registrador\n");
 	printf("4- Sair\n\n");
 }
 
@@ -477,35 +457,73 @@ void dump_memMenu() {
 	printf("Dump de memoria. \n\n");
 	printf("Entre com o endereco inicial (1024 max): ");
 
-	uint32_t warn = scanf("%" SCNd32, &dump_add);
+	scanf("%" SCNd32, &dump_add);
 	clean_buffer();
 
 	//Testa se o endereco esta dentro do permitido
 	while (dump_add < 0 || dump_add > 1024 ) {
 		CLEAR();
+		printf("Dump de memoria. \n\n");
 		printf("Entre com um endereco inicial valido (1024 max): ");
 
-		uint32_t warn2 = scanf("%" SCNd32, &dump_add);
+		scanf("%" SCNd32, &dump_add);
 		clean_buffer();
 	}
 
+	CLEAR();
+	printf("Dump de memoria. \n\n");
 	printf("Entre com o a quantidade de palavras que deseja retornar (1024 max): ");
 
-	uint32_t warn3 = scanf("%" SCNd32, &dump_size);
+	scanf("%" SCNd32, &dump_size);
 	clean_buffer();
 
 	//Testa se o tamanho esta dentro do permitido
 	while (dump_size < 0 || dump_size > (1024 - dump_add) ) {
 		CLEAR();
+		printf("Dump de memoria. \n\n");
 		printf("Entre com a quantidade de palavras validas (1024 max): ");
 
-		uint32_t warn4 = scanf("%" SCNd32, &dump_size);
+		scanf("%" SCNd32, &dump_size);
 		clean_buffer();
 	}
 
-	printf("\n");
+	CLEAR();
+	printf("Dump de memoria. \n\n");
+	printf("Qual o formato desejado? 'H' para Hexadecimal e 'D' para decimal. \n");
+
+	scanf("%" SCNd32, &format_op);
+	clean_buffer();
+
+	while (!strchr(options, format_op)) {
+		CLEAR();
+		printf("Dump de memoria. \n\n");
+		printf("Qual o formato desejado? 'H' para Hexadecimal e 'D' para decimal. \n\n");
+		printf("Favor entrar uma opcao valida.");
+		scanf("%" SCNd32, &format_op);
+		clean_buffer();
+	}
 }
 
+void dump_regMenu() {
+	
+	printf("Dump de registradores. \n\n");
+	printf("Qual o formato desejado? 'H' para Hexadecimal e 'D' para decimal. \n\n");
+
+	scanf("%" SCNd32, &format_op_reg);
+	clean_buffer();
+
+	while (!strchr(options, format_op_reg))	{
+		CLEAR();
+		printf("Dump de registradores. \n\n");
+		printf("Qual o formato desejado? 'H' para Hexadecimal e 'D' para decimal. \n\n");
+		printf("Favor entrar um valor valido. \n");
+
+		scanf("%" SCNd32, &format_op_reg);
+		clean_buffer();
+	}
+}
+
+//Inicializa a memoria com os arquivos de dados
 void initMem() {
 
 	FILE* text, * data;
@@ -518,10 +536,10 @@ void initMem() {
 	}
 
 	//Global Pointer
-	regs[28] = 0x1800;
+	regs[0] = 0x1800;
 
 	//Stack Pointer
-	regs[29] = 0x3FFC;
+	regs[3] = 0x3FFC;
 
 	//Abre o arquivo textbin
 	text = fopen("text.bin", "rb+");
@@ -554,10 +572,10 @@ void initMem() {
 	}
 	fclose(text);
 
-	num = 0x2000;
+	num = (0x2000 >> 2);
 
 	//Percorre o arquivo data
-	while (!feof(data) && num < 0x2FFC) {
+	while (!feof(data) && num < (0x8000 >> 2)) {
 		word = 0;
 		for (i = 0; i < 4; i++)	{
 			if (1 == fread(&byte, sizeof(char), 1, data)) {
@@ -569,6 +587,73 @@ void initMem() {
 		num++;
 	}
 	fclose(data);
+}
+
+//Mostra na tela o conteudo dos registradores
+void dump_reg(char format) {
+
+	char reg_names[][6] = {
+		"zero","ra","sp","gp","tp","t0","t1","t2",
+		"s0","s1","a0","a1","a2","a3","a44","a5",
+		"a6","a7","s2","s3","s4","s5","s6","s7",
+		"s8","s9","s10","s11","t3","t4","t5","t6"
+	};
+
+	int i;
+
+	if (!strchr(options, format)){
+		printf("Opcao invalida.");
+		return;
+	}
+
+	printf("Dados dos registradores: \n");
+	for (i = 0; i < 32; i++) {
+		if (format == "h" || format == "H")	{
+			printf("%-5.5s\t0x%-2.2d\t0x%-8.8X\n", reg_names[i], i, regs[i]);
+		}
+		else {
+			printf("%-5.5s\t0x%-2.2d\t%-10.10d\n", reg_names[i], i, regs[i]);
+		}
+
+		if (format == "h" || format == "H")	{
+			printf("%-5.5s\t\t0x%8-8X\n", pc);
+		}
+		else {
+			printf("%%-5.5s\t\t0x%10.10d\n", pc);
+		}
+	}
+}
+
+//Imprime o conteudo da memoria, em formato hexadecimal
+void dump_mem(uint32_t start, uint32_t end, char format) {
+	////Variavel para corrigir a contagem do index da memoria
+	//int a = add / 4;
+	
+	uint32_t i = 0;
+	int j = 1;
+
+	if (start > end || start < 0 || start > 0x7FFC || end < 0 || end > 0x7FFC ||
+		(start % 4) || (end % 4) || !strchr(options, format)) {
+
+		printf("\nNao foi possivel realizar o dump de memoria.\n\n");
+		enter();
+		return;
+	}
+
+	printf("\nConteudo de memoria entre 0x%-4.4X  -->  0x%-4.4X \n\n ", start, end);
+
+	for (i = start; i <= end; i += 4) {
+		if (format == "H" || format == "h") {
+			printf("0x%-8.8X&c", mem[i >> 2], (j % 6) ? " " : "\n");
+		}
+		else {
+			printf("%-8.8d%c", mem[i >> 2], (j % 6) ? " " : "\n");
+		}
+
+		j++;
+	}
+
+	printf("\n\nFim (0x%-5.4X\n)", end);
 }
 
 
@@ -601,7 +686,7 @@ void run() {
 			dump_memMenu();
 
 			//Chama a funcao principal de dump_mem
-			dump_mem(dump_add, dump_size);
+			dump_mem(dump_add, dump_size, format_op);
 
 			//Pausa para mostrar na tela o dump de memoria
 			enter();
@@ -617,8 +702,11 @@ void run() {
 			//Limpa a tela para mostrar os dados
 			CLEAR();
 
-			//Puxa da memoria os dados
-			//read_mem();
+			//Mostra na tela o menu para o dump_reg()
+			dump_regMenu();
+
+			//Chama a funcao que roda o dump dos registradores
+			dump_reg(format_op_reg);
 
 			//Pausa a aplicacao e espera pelo enter do usuario
 			enter();
@@ -648,7 +736,6 @@ void run() {
 // Funcao principal do programa
 int main() {
 
-	//Inicializa a memoria com zeros
 	clean_mem();
 
 	//Inicializa o PC em zero
@@ -657,7 +744,6 @@ int main() {
 	//Inicializa o RI em zero
 	ri = 0;
 
-	//Chama a funcao principal do programa
 	run();
 
 	return 0;
