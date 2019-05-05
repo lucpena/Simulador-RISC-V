@@ -14,7 +14,6 @@
 #include <string.h>
 #include <inttypes.h>
 #include <ctype.h>
-#include <windows.h>
 
 //Macros Auxiliares
 #define SIGNED(imm) (((imm) & 0x8000) ? ((imm) | 0xFFFF0000) : (imm))
@@ -94,7 +93,7 @@ void enter() {
 //Le um inteiro alinhado. Enderecos multiplos de 4
 int32_t lw(uint32_t add, int16_t kte) {
 	
-	int32_t tmp = mem[add >> 2];
+	int32_t tmp = mem[(add + kte) >> 2];
 
 	//Verifica se o endereco nao eh multiplo de 4
 	if (add % 4 != 0) {
@@ -108,7 +107,7 @@ int32_t lw(uint32_t add, int16_t kte) {
 
 //Le meia palavra (16 bits). Retorna inteiro com sinal
 int32_t lh(uint32_t add, int16_t kte) {
-	uint32_t tmp = mem[add >> 2];
+	uint32_t tmp = mem[(add + kte) >> 2];
 	uint32_t ret = 0;
 
 	if (add % 2) {
@@ -130,7 +129,7 @@ uint32_t lhu(uint32_t add, int16_t kte) {
 	uint32_t tmp, ret;
 	
 	//Coloca em tmp o valor da memoria do endereco 
-	tmp = mem[add >> 2];
+	tmp = mem[(add + kte) >> 2];
 	ret = 0; 
 
 	// Checa se os Dados estao alinhados
@@ -166,7 +165,7 @@ int32_t lbu(uint32_t add, int16_t kte) {
 	uint32_t tmp;
 
 	tmp = mem[add >> 2];
-	tmp = tmp >> (8 * kte);
+	tmp = tmp >> (8 * (add + kte));
 	tmp &= 0xFF;
 
 	return tmp;
@@ -190,9 +189,6 @@ void sh(uint32_t add, int16_t kte, int16_t dado) {
 	// Endereco de memoria
 	uint32_t tmp = mem[add >> 2];
 
-	//Offset da meia palavra em relacao ao endereco da palavra
-	int hadd = (add + kte) % 4;
-
 	//Mascara apicada para poder pegar somente a meia palavra
 	dado &= 0xFFFF;
 
@@ -201,13 +197,13 @@ void sh(uint32_t add, int16_t kte, int16_t dado) {
 		return;
 	}
 
-	if ((add + kte) % 4 == 0) {
-		tmp &= 0xFFFF0000;
-		tmp |= dado;
-	}
-	else {
+	if (add % 4) {
 		tmp &= 0x0000FFFF;
 		tmp |= dado << 16;
+	}
+	else {
+		tmp &= 0xFFFF0000;
+		tmp |= dado;
 	}
 
 	//Salva a operacao na memoria
@@ -218,6 +214,7 @@ void sh(uint32_t add, int16_t kte, int16_t dado) {
 void sb(uint32_t add, int16_t kte, int8_t dado) {
 	//Carrega para tmp o valor que esta na memoria
 	uint32_t tmp = mem[add >> 2];
+	int off = add % 4;
 
 	//Pega somente o dado fornecido
 	int8_t exbyte = dado & 0xFF;
@@ -225,12 +222,14 @@ void sb(uint32_t add, int16_t kte, int8_t dado) {
 	//Array contendo as mascaras necessarias para a operacao
 	int mask[] = { 0xFF, 0xFF00, 0xFF0000, 0xFF000000 };
 
-	//Coloca o byte no local correto em relacao ao bit original
-	uint32_t a = exbyte << (8 * kte);
-	uint32_t b = a & mask[kte];
+	tmp = (tmp & mask[off]) + (exbyte << (8 * off));
 
-	//Adiciona o byte ao bit
-	tmp += b;
+	////Coloca o byte no local correto em relacao ao bit original
+	//uint32_t a = exbyte << (8 * kte);
+	//uint32_t b = a & mask[kte];
+
+	////Adiciona o byte ao bit
+	//tmp += b;
 
 	//Salva na memoria o dado
 	mem[add >> 2] = tmp;
@@ -240,14 +239,14 @@ void sb(uint32_t add, int16_t kte, int8_t dado) {
 
 //Executa o ECALL
 void ecall() {
-	switch (regs[2]) {
+	switch (regs[17]) {
 	case 1:
 		//Mostra um inteiro na tela,mv c
-		printf("%d", regs[4]);
+		printf("%d", regs[10]);
 		break;
 	case 4:
 		//Mostra uma string na tela
-		printf("%c", (char)regs[4]);
+		printf("%c", (char)regs[10]);
 		break;
 	case 10:
 		//Encerra o programa
@@ -446,10 +445,11 @@ void step() {
 void menuInicial() {
 	printf("Simulador RISC V \n\n");
 	printf("Escolha a opcao desejada:\n");
-	printf("1- Inicializar a memoria a partir dos arquivos text e data \n");
-	printf("2- Imprimir o conteudo da memoria\n");
+	printf("1- Rodar o Step() \n");
+	printf("2- Run() \n");
 	printf("3- Imprimir o conteudo do registrador\n");
-	printf("4- Sair\n\n");
+	printf("4- Imprimir o conteudo do registrador\n");
+	printf("5- Sair\n\n");
 }
 
 //Printa tela da opcao 'dump_mem()'
@@ -572,7 +572,7 @@ void initMem() {
 	}
 	fclose(text);
 
-	num = (0x2000 >> 2);
+	num = 0x2000;
 
 	//Percorre o arquivo data
 	while (!feof(data) && num < (0x8000 >> 2)) {
@@ -594,7 +594,7 @@ void dump_reg(char format) {
 
 	char reg_names[][6] = {
 		"zero","ra","sp","gp","tp","t0","t1","t2",
-		"s0","s1","a0","a1","a2","a3","a44","a5",
+		"s0","s1","a0","a1","a2","a3","a4","a5",
 		"a6","a7","s2","s3","s4","s5","s6","s7",
 		"s8","s9","s10","s11","t3","t4","t5","t6"
 	};
@@ -619,7 +619,7 @@ void dump_reg(char format) {
 			printf("%-5.5s\t\t0x%8-8X\n", pc);
 		}
 		else {
-			printf("%%-5.5s\t\t0x%10.10d\n", pc);
+			printf("%-5.5s\t\t0x%10.10d\n", pc);
 		}
 	}
 }
@@ -644,10 +644,10 @@ void dump_mem(uint32_t start, uint32_t end, char format) {
 
 	for (i = start; i <= end; i += 4) {
 		if (format == "H" || format == "h") {
-			printf("0x%-8.8X&c", mem[i >> 2], (j % 6) ? " " : "\n");
+			printf("0x%-8.8X&c", mem[i >> 2]);
 		}
 		else {
-			printf("%-8.8d%c", mem[i >> 2], (j % 6) ? " " : "\n");
+			printf("%-8.8d%c", mem[i >> 2]);
 		}
 
 		j++;
@@ -675,10 +675,13 @@ void run() {
 			CLEAR();
 
 			menuInicial();
-			printf("\nMemoria inicializada com sucesso. \n\n");
+			printf("\nRun() realizado com sucesso. \n\n");
 
 			break;
 		case 2:
+			step();
+			break;
+		case 3:
 			//Limpa a tela
 			CLEAR();
 
@@ -698,7 +701,7 @@ void run() {
 
 			break;
 
-		case 3:
+		case 4:
 			//Limpa a tela para mostrar os dados
 			CLEAR();
 
@@ -718,9 +721,10 @@ void run() {
 
 			break;
 
-		case 4:
+		case 5:
 			//Sai do programa
 			is_running = 0;
+			break;
 
 		default:
 			CLEAR();
